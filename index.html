@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drakkenheim Route Mapper</title>
+  <link rel="icon" href="assets/route-mapper-icon.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="title-row">
+      <img src="assets/route-mapper-icon.png" alt="" class="app-icon">
+      <div>
+        <h1>Drakkenheim Route Mapper</h1>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="toggleTheme" type="button">Light mode</button>
+      <details class="header-menu pin-mover-menu">
+        <summary>Move Pins</summary>
+        <div class="header-menu-panel landmark-edit-panel">
+          <label class="field-stack">
+            <span>Pin to move</span>
+            <select id="mapLandmarkEditSelect"></select>
+          </label>
+          <div class="action-row">
+            <button id="toggleLandmarkEditMode" type="button">Move Selected Pin</button>
+            <button id="resetMapLandmarkPositions" type="button">Reset Pins</button>
+            <button id="copyMapLandmarkData" type="button">Copy Landmark Data</button>
+          </div>
+          <p id="mapPinEditNote" class="inline-note">Select a landmark, then enable pin moving and click the map to reposition it. Use Copy Landmark Data after moving pins so the positions can be made default.</p>
+        </div>
+      </details>
+      <button id="toggleCompact" type="button">Compact mode</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="map-shell">
+      <article class="map-card">
+        <h2>Route map</h2>
+        <p class="inline-note">Click the map to set a route. Each click plots travel using the selected route leg, pace, and road type. Double-click a point to end the current hour early there.</p>
+
+        <div class="map-layout">
+          <section class="map-view-panel">
+            <div class="map-stage-wrap">
+              <div id="drakkenheimMapStage" class="map-stage" aria-label="Interactive Drakkenheim map">
+                <div id="mapZoomSurface" class="map-zoom-surface">
+                  <img class="map-base-image" src="assets/drakkenheim-map.webp" alt="Map of Drakkenheim">
+                  <svg id="mapOverlaySvg" class="map-overlay-svg" viewBox="0 0 2048 2048" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                    <g id="mapRouteSegmentSvg"></g>
+                    <g id="mapRestSpotSvg"></g>
+                    <g id="mapRouteMarkerSvg"></g>
+                    <g id="mapLandmarkSvg"></g>
+                  </svg>
+                </div>
+              </div>
+              <div id="mapPinTooltip" class="map-pin-tooltip" role="tooltip" hidden></div>
+              <div id="mapFloatingRouteControls" class="map-floating-route-controls" aria-label="Floating route controls">
+                <div id="mapFloatingRouteHandle" class="map-floating-route-handle" role="button" tabindex="0" aria-label="Drag route controls">
+                  <span>Route controls</span>
+                  <span class="drag-move-icon" aria-hidden="true" title="Move">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M12 2l3 3h-2v5h5V8l4 4-4 4v-2h-5v5h2l-3 3-3-3h2v-5H6v2l-4-4 4-4v2h5V5H9l3-3z"></path>
+                      </svg>
+                    </span>
+                </div>
+                <div class="floating-fields">
+                  <label>
+                    <span>Route leg</span>
+                    <select id="mapRouteLeg">
+                      <option value="inbound" selected>Into Drakkenheim</option>
+                      <option value="outbound">Out of Drakkenheim</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Show on map</span>
+                    <select id="mapRouteVisibility">
+                      <option value="all" selected>All route</option>
+                      <option value="inbound">Into only</option>
+                      <option value="outbound">Out only</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Travel pace</span>
+                    <select id="mapTravelPace">
+                      <option value="fast">Fast</option>
+                      <option value="normal" selected>Normal</option>
+                      <option value="slow">Slow</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Road type</span>
+                    <select id="mapTerrain">
+                      <option value="mainRoad" selected>Main roads</option>
+                      <option value="sideRoad">Side roads / rubble — forced slow pace</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="floating-actions">
+                  <button id="undoMapSegment" type="button">Undo Last Hour</button>
+                  <button id="clearMapRoute" type="button">Clear Route</button>
+                </div>
+              </div>
+              <div class="map-zoom-widget" aria-label="Map zoom controls">
+                <output id="mapZoomValue">100%</output>
+                <input id="mapZoom" type="range" min="1" max="3" step="0.05" value="1" aria-label="Map zoom">
+                <button id="resetMapZoom" type="button">Reset</button>
+              </div>
+            </div>
+            <p class="inline-note">Use the current Show on map setting before exporting if you only want the route in or the route out.</p>
+          </section>
+
+          <aside class="side-panel">
+            <details class="tool-box collapsible-tool" open>
+              <summary>Travel setup</summary>
+              <label class="field-stack">
+                <span>Day starts</span>
+                <input id="mapDayStartTime" type="time" value="08:00">
+              </label>
+              <p id="mapPaceNote" class="inline-note"></p>
+              <details class="map-route-rules">
+                <summary>Route rules</summary>
+                <ul>
+                  <li>Each city exploration hour is built from the clicks plotted on the map.</li>
+                  <li>If the party changes pace, road type, or route leg mid-hour, change the floating control before the next click.</li>
+                  <li><strong>Main roads</strong> use the selected pace. <strong>Side roads / rubble</strong> forces slow pace for that movement.</li>
+                  <li><strong>Fast</strong> is 1 mile/hour, <strong>Normal</strong> is ½ mile/hour, and <strong>Slow</strong> is ¼ mile/hour. Side roads/rubble always uses the slow pace distance.</li>
+                </ul>
+              </details>
+            </details>
+
+            <details class="tool-box collapsible-tool" open>
+              <summary>Safe haven travel</summary>
+              <p class="inline-note">Travel to and from the city outskirts is tracked separately from city exploration.</p>
+              <label class="field-stack">
+                <span>Safe haven</span>
+                <select id="mapSafeHaven">
+                  <option value="emberwood">Emberwood Village — 2 hours</option>
+                  <option value="eckermanMill">Eckerman Mill — 20 minutes</option>
+                </select>
+              </label>
+              <div class="action-row">
+                <button id="addApproachTravel" type="button">Add Approach</button>
+                <button id="addReturnTravel" type="button">Add Return</button>
+                <button id="clearOutsideTravel" type="button">Clear</button>
+              </div>
+              <ul id="mapOutsideTravelList" class="compact-list"></ul>
+            </details>
+
+            <details class="tool-box collapsible-tool">
+              <summary>Short rest spots</summary>
+              <p class="inline-note">Save up to 3 rest spots on the map.</p>
+              <button id="addShortRestSpotMode" type="button">Add Short Rest Spot</button>
+              <ol id="mapRestSpotList" class="compact-list"></ol>
+            </details>
+          </aside>
+
+          <aside class="side-panel">
+            <details class="tool-box collapsible-tool" open>
+              <summary>Route summary</summary>
+              <div id="mapRouteSummary" class="description-output empty-state">No route plotted yet. Add an approach or click the map to place the party's starting point.</div>
+            </details>
+
+            <details class="tool-box collapsible-tool" open>
+              <summary>Exploration log</summary>
+              <div class="action-row">
+                <button id="copyMapExplorationLog" type="button">Copy Exploration Log</button>
+                <button id="exportMapRouteOverlay" type="button">Export Route Overlay PNG</button>
+              </div>
+              <p class="inline-note">Exports a transparent 6020×6020 PNG with a faint edge border for Roll20 alignment.</p>
+              <ol id="mapRouteSegmentList" class="compact-list"></ol>
+            </details>
+
+            <details class="tool-box collapsible-tool">
+              <summary>Add log event</summary>
+              <p class="inline-note">Record short rests, searches, wrong turns, or other time spent during the route.</p>
+              <label class="field-stack">
+                <span>Event type</span>
+                <select id="mapEventType">
+                  <option value="shortRest">Short rest</option>
+                  <option value="searchDelerium">Search for delerium</option>
+                  <option value="searchObjective">Search for a specific thing</option>
+                  <option value="searchRestSpot">Search for a short rest spot</option>
+                  <option value="getLost">Get lost / wrong turn</option>
+                  <option value="custom">Custom note</option>
+                </select>
+              </label>
+              <label class="field-stack">
+                <span>Note</span>
+                <input id="mapEventCustomText" type="text" placeholder="Optional note">
+              </label>
+              <label class="field-stack">
+                <span>Duration</span>
+                <input id="mapEventCustomDuration" type="number" min="1" step="1" value="60">
+              </label>
+              <button id="addMapEvent" type="button">Add Log Event</button>
+            </details>
+
+            <details class="tool-box landmarks-box collapsible-tool">
+              <summary>Landmarks</summary>
+              <p class="inline-note">Click a landmark button to route towards it.</p>
+              <div id="mapLandmarkList" class="landmark-list"></div>
+            </details>
+          </aside>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer>
+    <span>Drakkenheim Route Mapper standalone</span>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
