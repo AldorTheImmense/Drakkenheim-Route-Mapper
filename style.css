@@ -330,3 +330,21 @@ button.active,
 .forced-pace-field select:disabled {
   cursor: not-allowed;
 }
+
+
+/* Map marker scaling and route-hour marker distinction */
+.map-route-marker.hour-marker rect {
+  fill: rgba(8, 7, 10, 0.9);
+  stroke: var(--accent-strong);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(240, 210, 138, 0.5));
+}
+
+.map-route-marker.hour-marker.open-hour-end rect {
+  stroke: var(--haze);
+  filter: drop-shadow(0 0 8px rgba(162, 95, 255, 0.7));
+}
+
+.map-route-marker.hour-marker text {
+  letter-spacing: 0.03em;
+}
