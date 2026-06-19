@@ -155,6 +155,23 @@
               <button id="addShortRestSpotMode" type="button">Add Short Rest Spot</button>
               <ol id="mapRestSpotList" class="compact-list"></ol>
             </details>
+          </aside>
+
+          <aside class="side-panel">
+            <details class="tool-box collapsible-tool" open>
+              <summary>Route summary</summary>
+              <div id="mapRouteSummary" class="description-output empty-state">No route plotted yet. Add an approach or click the map to place the party's starting point.</div>
+            </details>
+
+            <details class="tool-box collapsible-tool" open>
+              <summary>Exploration log</summary>
+              <div class="action-row">
+                <button id="copyMapExplorationLog" type="button">Copy Exploration Log</button>
+                <button id="exportMapRouteOverlay" type="button">Export Route Overlay PNG</button>
+              </div>
+              <p class="inline-note">Exports a transparent 6020×6020 PNG with a faint edge border for Roll20 alignment.</p>
+              <ol id="mapRouteSegmentList" class="compact-list"></ol>
+            </details>
 
             <details class="tool-box collapsible-tool">
               <summary>Add log event</summary>
@@ -179,24 +196,6 @@
                 <input id="mapEventCustomDuration" type="number" min="1" step="1" value="60">
               </label>
               <button id="addMapEvent" type="button">Add Log Event</button>
-            </details>
-
-          </aside>
-
-          <aside class="side-panel">
-            <details class="tool-box collapsible-tool" open>
-              <summary>Route summary</summary>
-              <div id="mapRouteSummary" class="description-output empty-state">No route plotted yet. Add an approach or click the map to place the party's starting point.</div>
-            </details>
-
-            <details class="tool-box collapsible-tool" open>
-              <summary>Exploration log</summary>
-              <div class="action-row">
-                <button id="copyMapExplorationLog" type="button">Copy Exploration Log</button>
-                <button id="exportMapRouteOverlay" type="button">Export Route Overlay PNG</button>
-              </div>
-              <p class="inline-note">Exports a transparent 6020×6020 PNG with a faint edge border for Roll20 alignment.</p>
-              <ol id="mapRouteSegmentList" class="compact-list"></ol>
             </details>
 
             <details class="tool-box landmarks-box collapsible-tool">

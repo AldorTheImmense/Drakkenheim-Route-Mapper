@@ -616,6 +616,16 @@ function endMapFloatingRouteDrag(event) {
   saveStandaloneState();
 }
 
+
+function normaliseMapFloatingControlsPosition(position) {
+  const left = Number(position && position.leftPercent);
+  const top = Number(position && position.topPercent);
+  return {
+    leftPercent: Number.isFinite(left) ? clamp(left, 0, 95) : 1.2,
+    topPercent: Number.isFinite(top) ? clamp(top, 0, 95) : 1.2
+  };
+}
+
 function applyMapFloatingRouteControlsPosition() {
   const controls = byId("mapFloatingRouteControls");
   if (!controls) return;
@@ -1246,6 +1256,8 @@ function loadStandaloneState() {
     setMapZoom(state.ui?.zoom || 1);
     syncMapTerrainPaceControl();
     renderMapTools();
+  } catch (_error) {
+    // Bad or older saved data should not block the initial map render.
   } finally {
     isRestoringSavedState = false;
     hasLoadedSavedState = true;
@@ -1346,4 +1358,8 @@ function init() {
   window.addEventListener("beforeunload", saveStandaloneState);
 }
 
-document.addEventListener("DOMContentLoaded", init);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init, { once: true });
+} else {
+  init();
+}
