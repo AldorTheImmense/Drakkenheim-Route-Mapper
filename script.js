@@ -293,6 +293,7 @@ function ensureCurrentMapHourAdjustPanel() {
 }
 
 function bindCurrentHourAdjustControls() {
+  // Bind exactly once. A duplicate listener makes the -1 minute button trim twice.
   const input = byId("mapCurrentHourMinutes");
   if (input && !input.dataset.trimBound) {
     input.dataset.trimBound = "true";
@@ -1578,21 +1579,6 @@ function init() {
   byId("toggleLandmarkEditMode").addEventListener("click", toggleLandmarkEditMode);
   byId("resetMapLandmarkPositions").addEventListener("click", resetMapLandmarkPositions);
   byId("copyMapLandmarkData").addEventListener("click", copyMapLandmarkData);
-  const currentHourMinutesInput = byId("mapCurrentHourMinutes");
-  if (currentHourMinutesInput) {
-    currentHourMinutesInput.addEventListener("change", () => setCurrentMapHourUsedMinutes(currentHourMinutesInput.value));
-  }
-  const applyCurrentHourMinutesButton = byId("applyCurrentHourMinutes");
-  if (applyCurrentHourMinutesButton) {
-    applyCurrentHourMinutesButton.addEventListener("click", () => setCurrentMapHourUsedMinutes(byId("mapCurrentHourMinutes")?.value));
-  }
-  const trimCurrentHourMinuteButton = byId("trimCurrentHourMinute");
-  if (trimCurrentHourMinuteButton) {
-    trimCurrentHourMinuteButton.addEventListener("click", () => {
-      const input = byId("mapCurrentHourMinutes");
-      setCurrentMapHourUsedMinutes((Number(input && input.value) || 0) - 1);
-    });
-  }
   byId("toggleTheme").addEventListener("click", toggleTheme);
   byId("toggleCompact").addEventListener("click", toggleCompact);
   document.querySelectorAll("details.collapsible-tool").forEach((panel) => {
