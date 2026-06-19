@@ -266,6 +266,139 @@ function mapHourSummaryMinutes(summary) {
   return Math.max(1, Math.min(60, minutes));
 }
 
+
+function ensureCurrentMapHourAdjustPanel() {
+  let panel = byId("mapCurrentHourAdjust");
+  if (panel) return panel;
+
+  const summary = byId("mapRouteSummary");
+  if (!summary || !summary.parentElement) return null;
+
+  panel = document.createElement("div");
+  panel.id = "mapCurrentHourAdjust";
+  panel.className = "map-time-adjust";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="map-time-adjust-control">
+      <label class="map-time-adjust-label" for="mapCurrentHourMinutes">Trim current route hour</label>
+      <input id="mapCurrentHourMinutes" type="number" min="1" step="1" inputmode="numeric">
+      <span class="map-time-adjust-unit">min used</span>
+      <button id="applyCurrentHourMinutes" type="button">Set minutes</button>
+      <button id="trimCurrentHourMinute" type="button">−1 min</button>
+    </div>
+    <p id="mapCurrentHourAdjustNote" class="map-time-adjust-note"></p>
+  `;
+  summary.insertAdjacentElement("afterend", panel);
+  bindCurrentHourAdjustControls();
+  return panel;
+}
+
+function bindCurrentHourAdjustControls() {
+  // Bind exactly once. A duplicate listener makes the -1 minute button trim twice.
+  const input = byId("mapCurrentHourMinutes");
+  if (input && !input.dataset.trimBound) {
+    input.dataset.trimBound = "true";
+    input.addEventListener("change", () => setCurrentMapHourUsedMinutes(input.value));
+  }
+
+  const applyButton = byId("applyCurrentHourMinutes");
+  if (applyButton && !applyButton.dataset.trimBound) {
+    applyButton.dataset.trimBound = "true";
+    applyButton.addEventListener("click", () => setCurrentMapHourUsedMinutes(byId("mapCurrentHourMinutes")?.value));
+  }
+
+  const trimButton = byId("trimCurrentHourMinute");
+  if (trimButton && !trimButton.dataset.trimBound) {
+    trimButton.dataset.trimBound = "true";
+    trimButton.addEventListener("click", () => {
+      const currentInput = byId("mapCurrentHourMinutes");
+      setCurrentMapHourUsedMinutes((Number(currentInput && currentInput.value) || 0) - 1);
+    });
+  }
+}
+
+function renderCurrentMapHourAdjust(openHour = currentMapHourInfo()) {
+  const panel = ensureCurrentMapHourAdjustPanel();
+  if (!panel) return;
+
+  bindCurrentHourAdjustControls();
+
+  const input = byId("mapCurrentHourMinutes");
+  const note = byId("mapCurrentHourAdjustNote");
+  const applyButton = byId("applyCurrentHourMinutes");
+  const trimButton = byId("trimCurrentHourMinute");
+  if (!input) return;
+
+  const usedMinutes = Math.round((Number(openHour && openHour.usedHours) || 0) * 60);
+  const canTrim = Boolean(openHour) && usedMinutes > 1 && (Number(openHour.remainingHours) || 0) > 0.0001;
+
+  panel.hidden = !canTrim;
+  panel.style.display = canTrim ? "" : "none";
+  panel.setAttribute("aria-hidden", canTrim ? "false" : "true");
+  if (!canTrim) return;
+
+  input.min = "1";
+  input.max = String(usedMinutes);
+  input.value = String(usedMinutes);
+  if (applyButton) applyButton.disabled = usedMinutes <= 1;
+  if (trimButton) trimButton.disabled = usedMinutes <= 1;
+  if (note) note.textContent = "Visible because the current route hour is incomplete. Decrease only: lowering the minutes shortens the route backwards along the last travelled segment.";
+}
+
+function setCurrentMapHourUsedMinutes(value) {
+  const openHour = currentMapHourInfo();
+  if (!openHour || !mapRouteSegments.length || !mapRoutePoints.length) return;
+
+  const currentHours = mapRouteSegments
+    .filter((segment) => Number(segment.hourIndex) === Number(openHour.hourIndex))
+    .reduce((total, segment) => total + mapSegmentHours(segment), 0);
+  const currentMinutes = Math.round(currentHours * 60);
+  const targetMinutes = Math.max(1, Math.min(currentMinutes, Math.floor(Number(value) || currentMinutes)));
+
+  if (targetMinutes >= currentMinutes) {
+    renderCurrentMapHourAdjust(openHour);
+    return;
+  }
+
+  let hoursToRemove = Math.max(0, currentHours - (targetMinutes / 60));
+
+  while (hoursToRemove > 0.0001 && mapRouteSegments.length) {
+    let segmentIndex = mapRouteSegments.length - 1;
+    while (segmentIndex >= 0 && Number(mapRouteSegments[segmentIndex].hourIndex) !== Number(openHour.hourIndex)) {
+      segmentIndex -= 1;
+    }
+    if (segmentIndex < 0) break;
+
+    const segment = mapRouteSegments[segmentIndex];
+    const segmentHours = mapSegmentHours(segment);
+    const startPoint = mapRoutePoints[segmentIndex];
+    const endPoint = mapRoutePoints[segmentIndex + 1];
+
+    if (!startPoint || !endPoint || segmentHours <= 0.0001 || segmentHours <= hoursToRemove + 0.0001) {
+      hoursToRemove -= Math.max(0, segmentHours);
+      mapRouteSegments.splice(segmentIndex, 1);
+      mapRoutePoints.splice(segmentIndex + 1, 1);
+      continue;
+    }
+
+    const remainingSegmentHours = Math.max(0.0001, segmentHours - hoursToRemove);
+    const ratio = Math.max(0, Math.min(1, remainingSegmentHours / segmentHours));
+    const newEndPoint = normaliseMapPoint({
+      x: startPoint.x + ((endPoint.x - startPoint.x) * ratio),
+      y: startPoint.y + ((endPoint.y - startPoint.y) * ratio),
+      label: endPoint.label || "Adjusted route endpoint"
+    });
+
+    mapRoutePoints[segmentIndex + 1] = newEndPoint;
+    segment.distanceMiles = pointDistance(startPoint, newEndPoint) / MAP_PIXELS_PER_MILE;
+    segment.segmentHours = remainingSegmentHours;
+    if (segment.hourComplete !== false && Number(segment.hours)) segment.hours = Math.min(1, remainingSegmentHours);
+    hoursToRemove = 0;
+  }
+
+  renderMapTools();
+}
+
 function combineConsecutiveMapHourParts(parts) {
   return arrayOrFallback(parts, []).reduce((combined, part) => {
     if (!part) return combined;
@@ -524,6 +657,63 @@ function endMapPan(event) {
   if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
 }
 
+
+function currentMapZoom() {
+  const input = byId("mapZoom");
+  return input ? Math.max(1, Math.min(3, Number(input.value) || 1)) : 1;
+}
+
+
+function mapMarkerScale() {
+  return 1 / Math.max(1, currentMapZoom());
+}
+
+function scaledMapMarkerValue(value, minimum = 0) {
+  const scaled = Number(value) * mapMarkerScale();
+  return Math.round(Math.max(Number(minimum) || 0, scaled) * 100) / 100;
+}
+
+function mapHourMarkerLabel(marker) {
+  return marker && marker.classes && String(marker.classes).includes("hour-marker") ? `H${marker.label}` : String(marker?.label ?? "");
+}
+
+function formatMapHourMarkerElapsedLabel(minutes) {
+  const totalMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainder = totalMinutes % 60;
+  if (!remainder) return String(hours);
+  if (remainder === 30) return `${hours}.5`;
+  return `${hours}h${remainder}`;
+}
+
+function mapElapsedMinutesAtRouteHour(summary, hourSummaries = getMapHourSummaries()) {
+  const hourNumber = Number(summary && summary.hourNumber) || 0;
+  const routeMinutes = arrayOrFallback(hourSummaries).reduce((total, hour) => {
+    return Number(hour.hourNumber) <= hourNumber ? total + mapHourSummaryMinutes(hour) : total;
+  }, 0);
+  const eventMinutes = mapEvents.reduce((total, event) => {
+    const afterHours = Number(event && event.afterHours) || 0;
+    return afterHours < hourNumber ? total + mapEventDuration(event) : total;
+  }, 0);
+  return routeMinutes + eventMinutes;
+}
+
+function drawRoundedMapRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+
 function setMapZoom(value, originClientX = null, originClientY = null) {
   const input = byId("mapZoom");
   const surface = byId("mapZoomSurface");
@@ -550,6 +740,8 @@ function setMapZoom(value, originClientX = null, originClientY = null) {
   surface.style.width = `${100 * newZoom}%`;
   surface.style.height = "";
   byId("mapZoomValue").textContent = `${Math.round(newZoom * 100)}%`;
+  renderMapLandmarks();
+  renderMapRoute();
 
   if (focusRatioX !== null && focusRatioY !== null) {
     const newRect = surface.getBoundingClientRect();
@@ -615,6 +807,16 @@ function endMapFloatingRouteDrag(event) {
   mapFloatingControlsDragState = null;
   if (controls.hasPointerCapture(event.pointerId)) controls.releasePointerCapture(event.pointerId);
   saveStandaloneState();
+}
+
+
+function normaliseMapFloatingControlsPosition(position) {
+  const left = Number(position && position.leftPercent);
+  const top = Number(position && position.topPercent);
+  return {
+    leftPercent: Number.isFinite(left) ? clamp(left, 0, 95) : 1.2,
+    topPercent: Number.isFinite(top) ? clamp(top, 0, 95) : 1.2
+  };
 }
 
 function applyMapFloatingRouteControlsPosition() {
@@ -748,7 +950,9 @@ function getMapRouteMarkerData(routeVisibility = currentMapRouteVisibility()) {
     if (!visibleParts.length) return;
     const endpointIndex = Math.max(...visibleParts.map((part) => part.segmentIndex + 1));
     if (!mapRoutePoints[endpointIndex]) return;
-    markerIndexes.push({ pointIndex: endpointIndex, label: String(summary.hourNumber), title: `${summary.complete ? "End" : "Current end"} of hour ${summary.hourNumber}`, classes: `${summary.complete ? "complete" : "open-hour-end"}` });
+    const elapsedMinutes = mapElapsedMinutesAtRouteHour(summary, hourSummaries);
+    const elapsedLabel = formatMapHourMarkerElapsedLabel(elapsedMinutes);
+    markerIndexes.push({ pointIndex: endpointIndex, label: elapsedLabel, title: `${summary.complete ? "End" : "Current end"} of route hour ${summary.hourNumber} — ${formatHoursFromMinutes(elapsedMinutes)} in Drakkenheim`, classes: `${summary.complete ? "complete" : "open-hour-end"} hour-marker` });
   });
   return markerIndexes;
 }
@@ -756,11 +960,13 @@ function getMapRouteMarkerData(routeVisibility = currentMapRouteVisibility()) {
 function renderMapLandmarks() {
   const svg = byId("mapLandmarkSvg");
   const list = byId("mapLandmarkList");
+  const landmarkRadius = scaledMapMarkerValue(14, 5);
+  const landmarkFontSize = scaledMapMarkerValue(22, 8);
   if (svg) {
     svg.innerHTML = MAP_LANDMARKS.map((landmark, index) => `
       <g class="map-landmark-marker ${landmark.type === "safe-haven" ? "safe-haven" : ""} ${editingMapLandmarks && index === selectedMapLandmarkIndex ? "selected" : ""}" data-landmark-index="${index}" data-map-tooltip="${escapeHtml(`${landmark.id}. ${landmark.label}`)}" transform="translate(${landmark.x} ${landmark.y})">
-        <circle r="14"></circle>
-        <text text-anchor="middle" dominant-baseline="central">${escapeHtml(landmark.id)}</text>
+        <circle r="${landmarkRadius}"></circle>
+        <text text-anchor="middle" dominant-baseline="central" style="font-size: ${landmarkFontSize}px;">${escapeHtml(landmark.id)}</text>
       </g>
     `).join("");
   }
@@ -816,11 +1022,24 @@ function renderMapRoute() {
     routeMarkerLayer.innerHTML = markerIndexes.map((marker) => {
       const point = mapRoutePoints[marker.pointIndex];
       if (!point) return "";
-      return `<g class="map-route-marker ${marker.classes}" data-map-tooltip="${escapeHtml(point.label || marker.title)}" transform="translate(${point.x} ${point.y})"><circle r="12"></circle><text text-anchor="middle" dominant-baseline="central">${escapeHtml(marker.label)}</text></g>`;
+      const isHourMarker = String(marker.classes || "").includes("hour-marker");
+      const label = mapHourMarkerLabel(marker);
+      const startRadius = scaledMapMarkerValue(12, 5);
+      const startFontSize = scaledMapMarkerValue(20, 8);
+      const hourFontSize = scaledMapMarkerValue(14, 7);
+      const hourWidth = scaledMapMarkerValue(Math.max(34, label.length * 10 + 14), 12);
+      const hourHeight = scaledMapMarkerValue(24, 9);
+      const hourRadius = scaledMapMarkerValue(7, 3);
+      return isHourMarker
+        ? `<g class="map-route-marker ${marker.classes}" data-map-tooltip="${escapeHtml(marker.title || point.label)}" transform="translate(${point.x} ${point.y})"><rect x="${-(hourWidth / 2)}" y="${-(hourHeight / 2)}" width="${hourWidth}" height="${hourHeight}" rx="${hourRadius}" ry="${hourRadius}"></rect><text text-anchor="middle" dominant-baseline="central" style="font-size: ${hourFontSize}px;">${escapeHtml(label)}</text></g>`
+        : `<g class="map-route-marker ${marker.classes}" data-map-tooltip="${escapeHtml(point.label || marker.title)}" transform="translate(${point.x} ${point.y})"><circle r="${startRadius}"></circle><text text-anchor="middle" dominant-baseline="central" style="font-size: ${startFontSize}px;">${escapeHtml(label)}</text></g>`;
     }).join("");
   }
   if (restLayer) {
-    restLayer.innerHTML = mapRestSpots.map((spot, index) => `<g class="map-rest-marker" data-rest-index="${index}" data-map-tooltip="${escapeHtml(`Short rest spot: ${spot.name}`)}" transform="translate(${spot.x} ${spot.y})"><path d="M0,-18 L5,-5 L18,0 L5,5 L0,18 L-5,5 L-18,0 L-5,-5 Z"></path><text text-anchor="middle" dominant-baseline="central">R${index + 1}</text></g>`).join("");
+    const restOuter = scaledMapMarkerValue(18, 7);
+    const restInner = scaledMapMarkerValue(5, 2);
+    const restFontSize = scaledMapMarkerValue(22, 8);
+    restLayer.innerHTML = mapRestSpots.map((spot, index) => `<g class="map-rest-marker" data-rest-index="${index}" data-map-tooltip="${escapeHtml(`Short rest spot: ${spot.name}`)}" transform="translate(${spot.x} ${spot.y})"><path d="M0,-${restOuter} L${restInner},-${restInner} L${restOuter},0 L${restInner},${restInner} L0,${restOuter} L-${restInner},${restInner} L-${restOuter},0 L-${restInner},-${restInner} Z"></path><text text-anchor="middle" dominant-baseline="central" style="font-size: ${restFontSize}px;">R${index + 1}</text></g>`).join("");
   }
 }
 
@@ -880,6 +1099,8 @@ function renderMapRouteSummary() {
     if (mapEvents.length) lines.push(`Logged events: ${mapEvents.length}.`);
     summary.textContent = lines.join("\n");
   }
+
+  renderCurrentMapHourAdjust(openHour);
 
   const logItems = [];
   let cursorMinutes = startMinutes;
@@ -1023,9 +1244,35 @@ function drawMapRouteExportSegment(ctx, visibleInfo) {
 function drawMapRouteExportMarker(ctx, marker) {
   const point = mapRoutePoints[marker.pointIndex];
   if (!point) return;
+  const isHourMarker = String(marker.classes || "").includes("hour-marker");
+  const label = mapHourMarkerLabel(marker);
   const stroke = marker.classes.includes("start") ? "#56bd86" : marker.classes.includes("open-hour-end") ? "#a25fff" : "#f0d28a";
-  ctx.save(); ctx.shadowColor = marker.classes.includes("open-hour-end") ? "rgba(162, 95, 255, 0.7)" : "rgba(240, 210, 138, 0.5)"; ctx.shadowBlur = 8; ctx.fillStyle = "rgba(8, 7, 10, 0.88)"; ctx.strokeStyle = stroke; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(point.x, point.y, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
-  ctx.save(); ctx.fillStyle = "#fff4d0"; ctx.font = '700 22px "Segoe UI", system-ui, sans-serif'; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(marker.label), point.x, point.y + 0.5); ctx.restore();
+
+  ctx.save();
+  ctx.shadowColor = marker.classes.includes("open-hour-end") ? "rgba(162, 95, 255, 0.7)" : "rgba(240, 210, 138, 0.5)";
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "rgba(8, 7, 10, 0.88)";
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 4;
+  if (isHourMarker) {
+    const width = Math.max(34, String(label).length * 10 + 14);
+    const height = 24;
+    drawRoundedMapRect(ctx, point.x - (width / 2), point.y - (height / 2), width, height, 7);
+  } else {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 12, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = "#fff4d0";
+  ctx.font = isHourMarker ? '700 14px "Segoe UI", system-ui, sans-serif' : '700 22px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(label), point.x, point.y + 0.5);
+  ctx.restore();
 }
 
 function drawMapRestExportMarker(ctx, spot, index) {
@@ -1072,7 +1319,6 @@ async function exportMapRouteOverlayPng() {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   if (blob) downloadBlob(blob, filename);
 }
-
 
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value ?? null));
@@ -1269,7 +1515,7 @@ function loadMapRouteSlot(slotId) {
   if (currentRouteHasContent() && !confirm(`Load "${slot.name}" and replace the current map route?`)) return;
   applyMapRouteSlotState(slot.mapTools);
   saveStandaloneState();
-  renderMapTools();
+  renderStandaloneStateAfterLoad();
 }
 
 function deleteMapRouteSlot(slotId) {
@@ -1456,6 +1702,9 @@ function loadStandaloneState() {
     applyMapFloatingRouteControlsPosition();
     setMapZoom(state.ui?.zoom || 1);
     syncMapTerrainPaceControl();
+    renderMapTools();
+  } catch (_error) {
+    // Bad or older saved data should not block the initial map render.
   } finally {
     isRestoringSavedState = false;
     hasLoadedSavedState = true;
@@ -1484,6 +1733,31 @@ function toggleCompact() {
   document.body.classList.toggle("compact");
   byId("toggleCompact").textContent = document.body.classList.contains("compact") ? "Normal spacing" : "Compact mode";
   saveStandaloneState();
+}
+
+
+function renderStandaloneStateAfterLoad() {
+  const renderOnce = () => {
+    syncMapTerrainPaceControl();
+    applyMapFloatingRouteControlsPosition();
+    renderMapLandmarks();
+    renderMapRoute();
+    renderOutsideTravel();
+    renderMapRestSpots();
+    renderMapRouteSummary();
+    renderMapRouteSlots();
+    renderCurrentMapHourAdjust(currentMapHourInfo());
+    saveStandaloneState();
+  };
+
+  renderOnce();
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(renderOnce);
+    requestAnimationFrame(() => requestAnimationFrame(renderOnce));
+  }
+  window.setTimeout(renderOnce, 75);
+  window.setTimeout(renderOnce, 250);
+  window.setTimeout(renderOnce, 500);
 }
 
 function init() {
@@ -1519,6 +1793,7 @@ function init() {
   byId("mapEventType").addEventListener("change", updateMapEventNoteField);
   byId("copyMapExplorationLog").addEventListener("click", copyMapExplorationLog);
   byId("exportMapRouteOverlay").addEventListener("click", exportMapRouteOverlayPng);
+  bindCurrentHourAdjustControls();
   byId("saveMapRouteSlot").addEventListener("click", () => saveCurrentMapRouteSlot());
   const routeSlotNameInput = byId("mapRouteSlotName");
   if (routeSlotNameInput) {
@@ -1548,7 +1823,13 @@ function init() {
   isRestoringSavedState = false;
 
   loadStandaloneState();
-  renderMapTools();
+  renderStandaloneStateAfterLoad();
+  window.addEventListener("load", renderStandaloneStateAfterLoad, { once: true });
+  window.addEventListener("beforeunload", saveStandaloneState);
 }
 
-document.addEventListener("DOMContentLoaded", init);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init, { once: true });
+} else {
+  init();
+}

@@ -161,6 +161,16 @@
             <details class="tool-box collapsible-tool" open>
               <summary>Route summary</summary>
               <div id="mapRouteSummary" class="description-output empty-state">No route plotted yet. Add an approach or click the map to place the party's starting point.</div>
+                <div id="mapCurrentHourAdjust" class="map-time-adjust" hidden>
+                  <div class="map-time-adjust-control">
+                    <label class="map-time-adjust-label" for="mapCurrentHourMinutes">Current route hour</label>
+                    <input id="mapCurrentHourMinutes" type="number" min="1" step="1" inputmode="numeric">
+                    <span class="map-time-adjust-unit">min used</span>
+                    <button id="applyCurrentHourMinutes" type="button">Set</button>
+                    <button id="trimCurrentHourMinute" type="button">−1 min</button>
+                  </div>
+                  <p id="mapCurrentHourAdjustNote" class="map-time-adjust-note"></p>
+                </div>
             </details>
 
             <details class="tool-box collapsible-tool">
