@@ -265,6 +265,138 @@ function mapHourSummaryMinutes(summary) {
   return Math.max(1, Math.min(60, minutes));
 }
 
+
+function ensureCurrentMapHourAdjustPanel() {
+  let panel = byId("mapCurrentHourAdjust");
+  if (panel) return panel;
+
+  const summary = byId("mapRouteSummary");
+  if (!summary || !summary.parentElement) return null;
+
+  panel = document.createElement("div");
+  panel.id = "mapCurrentHourAdjust";
+  panel.className = "map-time-adjust";
+  panel.hidden = true;
+  panel.innerHTML = `
+    <div class="map-time-adjust-control">
+      <label class="map-time-adjust-label" for="mapCurrentHourMinutes">Trim current route hour</label>
+      <input id="mapCurrentHourMinutes" type="number" min="1" step="1" inputmode="numeric">
+      <span class="map-time-adjust-unit">min used</span>
+      <button id="applyCurrentHourMinutes" type="button">Set minutes</button>
+      <button id="trimCurrentHourMinute" type="button">−1 min</button>
+    </div>
+    <p id="mapCurrentHourAdjustNote" class="map-time-adjust-note"></p>
+  `;
+  summary.insertAdjacentElement("afterend", panel);
+  bindCurrentHourAdjustControls();
+  return panel;
+}
+
+function bindCurrentHourAdjustControls() {
+  const input = byId("mapCurrentHourMinutes");
+  if (input && !input.dataset.trimBound) {
+    input.dataset.trimBound = "true";
+    input.addEventListener("change", () => setCurrentMapHourUsedMinutes(input.value));
+  }
+
+  const applyButton = byId("applyCurrentHourMinutes");
+  if (applyButton && !applyButton.dataset.trimBound) {
+    applyButton.dataset.trimBound = "true";
+    applyButton.addEventListener("click", () => setCurrentMapHourUsedMinutes(byId("mapCurrentHourMinutes")?.value));
+  }
+
+  const trimButton = byId("trimCurrentHourMinute");
+  if (trimButton && !trimButton.dataset.trimBound) {
+    trimButton.dataset.trimBound = "true";
+    trimButton.addEventListener("click", () => {
+      const currentInput = byId("mapCurrentHourMinutes");
+      setCurrentMapHourUsedMinutes((Number(currentInput && currentInput.value) || 0) - 1);
+    });
+  }
+}
+
+function renderCurrentMapHourAdjust(openHour = currentMapHourInfo()) {
+  const panel = ensureCurrentMapHourAdjustPanel();
+  if (!panel) return;
+
+  bindCurrentHourAdjustControls();
+
+  const input = byId("mapCurrentHourMinutes");
+  const note = byId("mapCurrentHourAdjustNote");
+  const applyButton = byId("applyCurrentHourMinutes");
+  const trimButton = byId("trimCurrentHourMinute");
+  if (!input) return;
+
+  const usedMinutes = Math.round((Number(openHour && openHour.usedHours) || 0) * 60);
+  const canTrim = Boolean(openHour) && usedMinutes > 1 && (Number(openHour.remainingHours) || 0) > 0.0001;
+
+  panel.hidden = !canTrim;
+  panel.style.display = canTrim ? "" : "none";
+  panel.setAttribute("aria-hidden", canTrim ? "false" : "true");
+  if (!canTrim) return;
+
+  input.min = "1";
+  input.max = String(usedMinutes);
+  input.value = String(usedMinutes);
+  if (applyButton) applyButton.disabled = usedMinutes <= 1;
+  if (trimButton) trimButton.disabled = usedMinutes <= 1;
+  if (note) note.textContent = "Visible because the current route hour is incomplete. Decrease only: lowering the minutes shortens the route backwards along the last travelled segment.";
+}
+
+function setCurrentMapHourUsedMinutes(value) {
+  const openHour = currentMapHourInfo();
+  if (!openHour || !mapRouteSegments.length || !mapRoutePoints.length) return;
+
+  const currentHours = mapRouteSegments
+    .filter((segment) => Number(segment.hourIndex) === Number(openHour.hourIndex))
+    .reduce((total, segment) => total + mapSegmentHours(segment), 0);
+  const currentMinutes = Math.round(currentHours * 60);
+  const targetMinutes = Math.max(1, Math.min(currentMinutes, Math.floor(Number(value) || currentMinutes)));
+
+  if (targetMinutes >= currentMinutes) {
+    renderCurrentMapHourAdjust(openHour);
+    return;
+  }
+
+  let hoursToRemove = Math.max(0, currentHours - (targetMinutes / 60));
+
+  while (hoursToRemove > 0.0001 && mapRouteSegments.length) {
+    let segmentIndex = mapRouteSegments.length - 1;
+    while (segmentIndex >= 0 && Number(mapRouteSegments[segmentIndex].hourIndex) !== Number(openHour.hourIndex)) {
+      segmentIndex -= 1;
+    }
+    if (segmentIndex < 0) break;
+
+    const segment = mapRouteSegments[segmentIndex];
+    const segmentHours = mapSegmentHours(segment);
+    const startPoint = mapRoutePoints[segmentIndex];
+    const endPoint = mapRoutePoints[segmentIndex + 1];
+
+    if (!startPoint || !endPoint || segmentHours <= 0.0001 || segmentHours <= hoursToRemove + 0.0001) {
+      hoursToRemove -= Math.max(0, segmentHours);
+      mapRouteSegments.splice(segmentIndex, 1);
+      mapRoutePoints.splice(segmentIndex + 1, 1);
+      continue;
+    }
+
+    const remainingSegmentHours = Math.max(0.0001, segmentHours - hoursToRemove);
+    const ratio = Math.max(0, Math.min(1, remainingSegmentHours / segmentHours));
+    const newEndPoint = normaliseMapPoint({
+      x: startPoint.x + ((endPoint.x - startPoint.x) * ratio),
+      y: startPoint.y + ((endPoint.y - startPoint.y) * ratio),
+      label: endPoint.label || "Adjusted route endpoint"
+    });
+
+    mapRoutePoints[segmentIndex + 1] = newEndPoint;
+    segment.distanceMiles = pointDistance(startPoint, newEndPoint) / MAP_PIXELS_PER_MILE;
+    segment.segmentHours = remainingSegmentHours;
+    if (segment.hourComplete !== false && Number(segment.hours)) segment.hours = Math.min(1, remainingSegmentHours);
+    hoursToRemove = 0;
+  }
+
+  renderMapTools();
+}
+
 function combineConsecutiveMapHourParts(parts) {
   return arrayOrFallback(parts, []).reduce((combined, part) => {
     if (!part) return combined;
@@ -543,6 +675,27 @@ function mapHourMarkerLabel(marker) {
   return marker && marker.classes && String(marker.classes).includes("hour-marker") ? `H${marker.label}` : String(marker?.label ?? "");
 }
 
+function formatMapHourMarkerElapsedLabel(minutes) {
+  const totalMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainder = totalMinutes % 60;
+  if (!remainder) return String(hours);
+  if (remainder === 30) return `${hours}.5`;
+  return `${hours}h${remainder}`;
+}
+
+function mapElapsedMinutesAtRouteHour(summary, hourSummaries = getMapHourSummaries()) {
+  const hourNumber = Number(summary && summary.hourNumber) || 0;
+  const routeMinutes = arrayOrFallback(hourSummaries).reduce((total, hour) => {
+    return Number(hour.hourNumber) <= hourNumber ? total + mapHourSummaryMinutes(hour) : total;
+  }, 0);
+  const eventMinutes = mapEvents.reduce((total, event) => {
+    const afterHours = Number(event && event.afterHours) || 0;
+    return afterHours < hourNumber ? total + mapEventDuration(event) : total;
+  }, 0);
+  return routeMinutes + eventMinutes;
+}
+
 function drawRoundedMapRect(ctx, x, y, width, height, radius) {
   const r = Math.min(radius, width / 2, height / 2);
   ctx.beginPath();
@@ -795,7 +948,9 @@ function getMapRouteMarkerData(routeVisibility = currentMapRouteVisibility()) {
     if (!visibleParts.length) return;
     const endpointIndex = Math.max(...visibleParts.map((part) => part.segmentIndex + 1));
     if (!mapRoutePoints[endpointIndex]) return;
-    markerIndexes.push({ pointIndex: endpointIndex, label: String(summary.hourNumber), title: `${summary.complete ? "End" : "Current end"} of hour ${summary.hourNumber}`, classes: `${summary.complete ? "complete" : "open-hour-end"} hour-marker` });
+    const elapsedMinutes = mapElapsedMinutesAtRouteHour(summary, hourSummaries);
+    const elapsedLabel = formatMapHourMarkerElapsedLabel(elapsedMinutes);
+    markerIndexes.push({ pointIndex: endpointIndex, label: elapsedLabel, title: `${summary.complete ? "End" : "Current end"} of route hour ${summary.hourNumber} — ${formatHoursFromMinutes(elapsedMinutes)} in Drakkenheim`, classes: `${summary.complete ? "complete" : "open-hour-end"} hour-marker` });
   });
   return markerIndexes;
 }
@@ -942,6 +1097,8 @@ function renderMapRouteSummary() {
     if (mapEvents.length) lines.push(`Logged events: ${mapEvents.length}.`);
     summary.textContent = lines.join("\n");
   }
+
+  renderCurrentMapHourAdjust(openHour);
 
   const logItems = [];
   let cursorMinutes = startMinutes;
@@ -1410,6 +1567,7 @@ function init() {
   byId("clearOutsideTravel").addEventListener("click", clearOutsideTravel);
   byId("addShortRestSpotMode").addEventListener("click", beginAddShortRestSpot);
   byId("addMapEvent").addEventListener("click", addMapEvent);
+  bindCurrentHourAdjustControls();
   byId("mapEventType").addEventListener("change", updateMapEventNoteField);
   byId("copyMapExplorationLog").addEventListener("click", copyMapExplorationLog);
   byId("exportMapRouteOverlay").addEventListener("click", exportMapRouteOverlayPng);
@@ -1420,6 +1578,21 @@ function init() {
   byId("toggleLandmarkEditMode").addEventListener("click", toggleLandmarkEditMode);
   byId("resetMapLandmarkPositions").addEventListener("click", resetMapLandmarkPositions);
   byId("copyMapLandmarkData").addEventListener("click", copyMapLandmarkData);
+  const currentHourMinutesInput = byId("mapCurrentHourMinutes");
+  if (currentHourMinutesInput) {
+    currentHourMinutesInput.addEventListener("change", () => setCurrentMapHourUsedMinutes(currentHourMinutesInput.value));
+  }
+  const applyCurrentHourMinutesButton = byId("applyCurrentHourMinutes");
+  if (applyCurrentHourMinutesButton) {
+    applyCurrentHourMinutesButton.addEventListener("click", () => setCurrentMapHourUsedMinutes(byId("mapCurrentHourMinutes")?.value));
+  }
+  const trimCurrentHourMinuteButton = byId("trimCurrentHourMinute");
+  if (trimCurrentHourMinuteButton) {
+    trimCurrentHourMinuteButton.addEventListener("click", () => {
+      const input = byId("mapCurrentHourMinutes");
+      setCurrentMapHourUsedMinutes((Number(input && input.value) || 0) - 1);
+    });
+  }
   byId("toggleTheme").addEventListener("click", toggleTheme);
   byId("toggleCompact").addEventListener("click", toggleCompact);
   document.querySelectorAll("details.collapsible-tool").forEach((panel) => {

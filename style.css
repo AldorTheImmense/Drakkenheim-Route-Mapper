@@ -348,3 +348,45 @@ button.active,
 .map-route-marker.hour-marker text {
   letter-spacing: 0.03em;
 }
+
+
+/* Current route-hour trimming control */
+.map-time-adjust {
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.55rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.map-time-adjust[hidden] {
+  display: none;
+}
+
+.map-time-adjust-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.map-time-adjust-label {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.map-time-adjust input {
+  width: 4.8rem;
+  padding-inline: 0.45rem;
+}
+
+.map-time-adjust-unit,
+.map-time-adjust-note {
+  color: var(--muted);
+}
+
+.map-time-adjust-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
