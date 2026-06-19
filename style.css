@@ -332,61 +332,45 @@ button.active,
 }
 
 
-/* Map marker scaling and route-hour marker distinction */
-.map-route-marker.hour-marker rect {
-  fill: rgba(8, 7, 10, 0.9);
-  stroke: var(--accent-strong);
-  stroke-width: 3;
-  filter: drop-shadow(0 0 8px rgba(240, 210, 138, 0.5));
-}
-
-.map-route-marker.hour-marker.open-hour-end rect {
-  stroke: var(--haze);
-  filter: drop-shadow(0 0 8px rgba(162, 95, 255, 0.7));
-}
-
-.map-route-marker.hour-marker text {
-  letter-spacing: 0.03em;
-}
-
-
-/* Current route-hour trimming control */
-.map-time-adjust {
+/* Route save slots */
+.route-slot-list {
+  display: grid;
+  gap: 0.55rem;
   margin-top: 0.65rem;
-  padding: 0.65rem;
+}
+
+.route-slot-item {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.55rem;
   border: 1px solid var(--border-soft);
   border-radius: 0.55rem;
-  background: rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.16);
 }
 
-.map-time-adjust[hidden] {
-  display: none;
-}
-
-.map-time-adjust-control {
+.route-slot-header {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  justify-content: space-between;
+  gap: 0.6rem;
+  align-items: baseline;
 }
 
-.map-time-adjust-label {
+.route-slot-name {
   color: var(--accent-strong);
-  font-weight: 700;
+  font-weight: 800;
 }
 
-.map-time-adjust input {
-  width: 4.8rem;
-  padding-inline: 0.45rem;
-}
-
-.map-time-adjust-unit,
-.map-time-adjust-note {
+.route-slot-meta {
   color: var(--muted);
+  font-size: 0.82rem;
 }
 
-.map-time-adjust-note {
-  margin: 0.35rem 0 0;
-  font-size: 0.84rem;
-  line-height: 1.35;
+.route-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.route-slot-actions button {
+  padding: 0.38rem 0.55rem;
 }
