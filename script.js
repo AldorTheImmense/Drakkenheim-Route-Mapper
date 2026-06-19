@@ -1245,6 +1245,7 @@ function loadStandaloneState() {
     applyMapFloatingRouteControlsPosition();
     setMapZoom(state.ui?.zoom || 1);
     syncMapTerrainPaceControl();
+    renderMapTools();
   } finally {
     isRestoringSavedState = false;
     hasLoadedSavedState = true;
@@ -1273,6 +1274,19 @@ function toggleCompact() {
   document.body.classList.toggle("compact");
   byId("toggleCompact").textContent = document.body.classList.contains("compact") ? "Normal spacing" : "Compact mode";
   saveStandaloneState();
+}
+
+
+function renderStandaloneStateAfterLoad() {
+  renderMapTools();
+  requestAnimationFrame(() => {
+    applyMapFloatingRouteControlsPosition();
+    renderMapTools();
+  });
+  setTimeout(() => {
+    applyMapFloatingRouteControlsPosition();
+    renderMapTools();
+  }, 50);
 }
 
 function init() {
@@ -1327,7 +1341,9 @@ function init() {
   isRestoringSavedState = false;
 
   loadStandaloneState();
-  renderMapTools();
+  renderStandaloneStateAfterLoad();
+  window.addEventListener("load", renderStandaloneStateAfterLoad, { once: true });
+  window.addEventListener("beforeunload", saveStandaloneState);
 }
 
 document.addEventListener("DOMContentLoaded", init);
